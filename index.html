@@ -509,8 +509,8 @@ function drawMediaClip(clip, media, time, w, h) {
     if ((type === 'fade-out'    || type === 'dissolve-out') && relEnd < d) ctx.globalAlpha = Math.max(0, relEnd / d);
   }
 
-  if (media.type === 'video' && media.videoEl?.readyState >= 2) {
-    ctx.drawImage(media.videoEl, 0, 0, w, h);
+  if (media.type === 'video' && media.videoEl) {
+    try { ctx.drawImage(media.videoEl, 0, 0, w, h); } catch(e) {}
   } else if (media.type === 'image' && media.imgEl) {
     const tr = clip.transform ?? { x: 0.5, y: 0.5, scale: 1, rotation: 0 };
     const iw = media.imgEl.naturalWidth  || w;
@@ -587,13 +587,14 @@ function syncVideoEls(playing) {
       if (!m?.videoEl) continue;
       const v = m.videoEl;
       const active = S.currentTime >= c.startTime && S.currentTime < c.startTime + c.duration;
-      v.volume = active ? c.volume * S.masterVolume : 0;
+      v.muted = false;
+      v.volume = active ? Math.max(0, Math.min(1, c.volume * S.masterVolume)) : 0;
       if (playing && active) {
         const srcT = (S.currentTime - c.startTime) + c.trimStart;
-        if (Math.abs(v.currentTime - srcT) > 0.2) v.currentTime = srcT;
-        v.play().catch(() => {});
+        if (Math.abs(v.currentTime - srcT) > 0.25) v.currentTime = srcT;
+        if (v.paused) v.play().catch(() => {});
       } else {
-        v.pause();
+        if (!v.paused) v.pause();
         if (active) {
           const srcT = (S.currentTime - c.startTime) + c.trimStart;
           if (Math.abs(v.currentTime - srcT) > 0.05) v.currentTime = srcT;
@@ -680,7 +681,7 @@ async function handleFiles(files) {
 function loadVideo(item) {
   return new Promise(res => {
     const v = document.createElement('video');
-    v.src = item.url; v.preload = 'auto'; v.muted = true; v.crossOrigin = 'anonymous';
+    v.src = item.url; v.preload = 'auto'; v.playsInline = true;
     v.addEventListener('loadedmetadata', () => {
       item.duration = v.duration || 5;
       item.w = v.videoWidth; item.h = v.videoHeight;
