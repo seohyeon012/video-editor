@@ -847,13 +847,15 @@ function renderHeaders() {
       renderFrame(S.currentTime);
     });
     const delBtn = document.createElement('button');
-    delBtn.className = 'track-mute'; delBtn.title = '트랙 삭제'; delBtn.textContent = '×';
-    delBtn.style.color = 'var(--danger)';
+    delBtn.className = 'track-mute'; delBtn.title = '트랙 삭제'; delBtn.textContent = '🗑';
+    delBtn.style.cssText = 'color:var(--danger);opacity:0;transition:opacity .15s;font-size:11px';
     delBtn.addEventListener('click', () => {
       if (!confirm(`"${track.label}" 트랙을 삭제할까요?`)) return;
       S.tracks = S.tracks.filter(t => t.id !== track.id);
       recalcDuration(); renderTimeline(); renderFrame(S.currentTime);
     });
+    div.addEventListener('mouseenter', () => delBtn.style.opacity = '1');
+    div.addEventListener('mouseleave', () => delBtn.style.opacity = '0');
     div.append(nameEl, muteBtn, delBtn); headers.appendChild(div);
   }
 }
