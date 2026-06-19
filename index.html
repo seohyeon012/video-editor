@@ -1546,6 +1546,7 @@ function promptTransition(clip) {
     const isLight = document.documentElement.classList.toggle('light');
     btn.textContent = isLight ? '🌙' : '☀️';
     localStorage.setItem('ve-theme', isLight ? 'light' : 'dark');
+    renderTimeline();
   });
 })();
 
