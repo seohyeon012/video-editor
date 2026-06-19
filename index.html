@@ -346,13 +346,14 @@ input[type="range"]{accent-color:var(--accent);cursor:pointer}
 
 <!-- Context Menu -->
 <div id="ctx-menu" class="hidden">
-  <div class="ctx-i" data-a="split">✂ 여기서 분할</div>
-  <div class="ctx-i" data-a="delete">🗑 삭제</div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-i" data-a="detach">🔇 오디오 분리</div>
-  <div class="ctx-i" data-a="duplicate">⧉ 복제</div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-i" data-a="transition">⟷ 트랜지션</div>
+  <div class="ctx-i clip-only" data-a="split">✂ 여기서 분할</div>
+  <div class="ctx-i clip-only" data-a="delete">🗑 클립 삭제</div>
+  <div class="ctx-sep clip-only"></div>
+  <div class="ctx-i clip-only" data-a="detach">🔇 오디오 분리</div>
+  <div class="ctx-i clip-only" data-a="duplicate">⧉ 복제</div>
+  <div class="ctx-sep clip-only"></div>
+  <div class="ctx-i clip-only" data-a="transition">⟷ 트랜지션</div>
+  <div class="ctx-i track-only" data-a="delete-track" style="color:var(--danger)">🗑 트랙 삭제</div>
 </div>
 
 <script>
@@ -847,17 +848,17 @@ function renderHeaders() {
       track.muted = !track.muted; muteBtn.classList.toggle('muted', track.muted);
       renderFrame(S.currentTime);
     });
-    const delBtn = document.createElement('button');
-    delBtn.className = 'track-mute'; delBtn.title = '트랙 삭제'; delBtn.textContent = '🗑';
-    delBtn.style.cssText = 'color:var(--danger);opacity:0;transition:opacity .15s;font-size:11px';
-    delBtn.addEventListener('click', () => {
-      if (!confirm(`"${track.label}" 트랙을 삭제할까요?`)) return;
-      S.tracks = S.tracks.filter(t => t.id !== track.id);
-      recalcDuration(); renderTimeline(); renderFrame(S.currentTime);
+    div.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const menu = document.getElementById('ctx-menu');
+      // 트랙 전용 메뉴 항목만 보이게
+      menu.dataset.mode = 'track';
+      menu.dataset.trackId = track.id;
+      menu.style.left = e.clientX + 'px';
+      menu.style.top  = e.clientY + 'px';
+      menu.classList.remove('hidden');
     });
-    div.addEventListener('mouseenter', () => delBtn.style.opacity = '1');
-    div.addEventListener('mouseleave', () => delBtn.style.opacity = '0');
-    div.append(nameEl, muteBtn, delBtn); headers.appendChild(div);
+    div.append(nameEl, muteBtn); headers.appendChild(div);
   }
 }
 
@@ -1031,6 +1032,7 @@ function openCtxMenu(e, clip, track) {
   e.preventDefault();
   ctxClip = clip; ctxTrack = track;
   const m = document.getElementById('ctx-menu');
+  m.dataset.mode = 'clip';
   m.style.left = e.clientX + 'px'; m.style.top = e.clientY + 'px';
   m.classList.remove('hidden'); selectClip(clip.id);
 }
@@ -1040,15 +1042,33 @@ function initCtxMenu() {
   document.addEventListener('click', () => m.classList.add('hidden'));
   m.addEventListener('click', e => {
     const a = e.target.dataset.a;
-    if (!a || !ctxClip) return;
-    const clip = ctxClip, track = ctxTrack;
+    if (!a) return;
     m.classList.add('hidden');
+    if (a === 'delete-track') {
+      const tid = m.dataset.trackId;
+      const track = S.tracks.find(t => t.id === tid);
+      if (!track) return;
+      if (!confirm(`"${track.label}" 트랙을 삭제할까요?`)) return;
+      S.tracks = S.tracks.filter(t => t.id !== tid);
+      recalcDuration(); renderTimeline(); renderFrame(S.currentTime);
+      return;
+    }
+    if (!ctxClip) return;
+    const clip = ctxClip, track = ctxTrack;
     if (a === 'split') splitClip(clip, track, S.currentTime);
     else if (a === 'delete') deleteClip(clip, track);
     else if (a === 'detach') detachAudio(clip, track);
     else if (a === 'duplicate') duplicateClip(clip, track);
     else if (a === 'transition') promptTransition(clip);
   });
+  // 모드에 따라 항목 표시/숨김
+  const observer = new MutationObserver(() => {
+    if (m.classList.contains('hidden')) return;
+    const isTrack = m.dataset.mode === 'track';
+    m.querySelectorAll('.clip-only').forEach(el => el.style.display = isTrack ? 'none' : '');
+    m.querySelectorAll('.track-only').forEach(el => el.style.display = isTrack ? '' : 'none');
+  });
+  observer.observe(m, { attributes: true, attributeFilter: ['class', 'data-mode'] });
 }
 
 function deleteClip(clip, track) {
