@@ -301,7 +301,13 @@ input[type="range"]{accent-color:var(--accent);cursor:pointer}
     <label>줌 <input type="range" id="tl-zoom" min="20" max="500" value="100"></label>
     <div class="sep"></div>
     <button id="btn-add-text">T 자막</button>
-    <button id="btn-add-audio-track">+ 오디오</button>
+    <div style="position:relative;display:inline-block">
+      <button id="btn-add-track">+ 트랙 ▾</button>
+      <div id="track-type-menu" style="display:none;position:absolute;top:100%;left:0;background:var(--bg2);border:1px solid var(--border);border-radius:6px;z-index:200;min-width:110px;padding:4px 0;box-shadow:0 6px 16px rgba(0,0,0,.4)">
+        <div class="ctx-i" id="add-video-track">🎬 비디오</div>
+        <div class="ctx-i" id="add-audio-track">🎵 오디오</div>
+      </div>
+    </div>
   </div>
   <div id="timeline-body">
     <div id="track-headers"></div>
@@ -380,9 +386,13 @@ const S = {
 
 function initTracks() {
   S.tracks = [
-    { id: uid(), type: 'video', label: 'Video 1', muted: false, clips: [] },
-    { id: uid(), type: 'audio', label: 'Audio 1', muted: false, clips: [] },
+    { id: uid(), type: 'video', label: '트랙 1', muted: false, clips: [] },
+    { id: uid(), type: 'audio', label: '트랙 2', muted: false, clips: [] },
   ];
+}
+
+function nextTrackLabel() {
+  return `트랙 ${S.tracks.length + 1}`;
 }
 
 function recalcDuration() {
@@ -771,7 +781,7 @@ function addMediaToTimeline(media) {
   const targetType = media.type === 'audio' ? 'audio' : 'video';
   let track = S.tracks.find(t => t.type === targetType);
   if (!track) {
-    track = { id: uid(), type: targetType, label: targetType === 'audio' ? 'Audio 1' : 'Video 1', muted: false, clips: [] };
+    track = { id: uid(), type: targetType, label: nextTrackLabel(), muted: false, clips: [] };
     S.tracks.push(track);
   }
   pushUndo();
@@ -1093,7 +1103,7 @@ function detachAudio(clip, track) {
   if (!media?.audioBuffer) { alert('오디오를 추출할 수 없습니다.'); return; }
   pushUndo();
   let at = S.tracks.find(t => t.type === 'audio');
-  if (!at) { at = { id: uid(), type: 'audio', label: 'Audio 1', muted: false, clips: [] }; S.tracks.push(at); }
+  if (!at) { at = { id: uid(), type: 'audio', label: nextTrackLabel(), muted: false, clips: [] }; S.tracks.push(at); }
   at.clips.push({ ...clip, id: uid(), type: 'audio', trackId: at.id });
   clip.volume = 0;
   renderTimeline();
@@ -1107,15 +1117,14 @@ function duplicateClip(clip, track) {
 
 function addTextClip() {
   let tt = S.tracks.find(t => t.type === 'text');
-  if (!tt) { tt = { id: uid(), type: 'text', label: 'Text', muted: false, clips: [] }; S.tracks.push(tt); }
+  if (!tt) { tt = { id: uid(), type: 'text', label: nextTrackLabel(), muted: false, clips: [] }; S.tracks.push(tt); }
   pushUndo();
   const clip = makeTextClip(tt.id, S.currentTime);
   tt.clips.push(clip); recalcDuration(); renderTimeline(); selectClip(clip.id);
 }
 
-function addAudioTrack() {
-  const n = S.tracks.filter(t => t.type === 'audio').length + 1;
-  S.tracks.push({ id: uid(), type: 'audio', label: `Audio ${n}`, muted: false, clips: [] });
+function addTrack(type) {
+  S.tracks.push({ id: uid(), type, label: nextTrackLabel(), muted: false, clips: [] });
   renderTimeline();
 }
 
@@ -1362,7 +1371,14 @@ document.getElementById('btn-del-clip').addEventListener('click', () => {
   const r = getClip(S.selectedClipId); if (r) deleteClip(r.clip, r.track);
 });
 document.getElementById('btn-add-text').addEventListener('click', addTextClip);
-document.getElementById('btn-add-audio-track').addEventListener('click', addAudioTrack);
+const trackMenu = document.getElementById('track-type-menu');
+document.getElementById('btn-add-track').addEventListener('click', e => {
+  e.stopPropagation();
+  trackMenu.style.display = trackMenu.style.display === 'none' ? 'block' : 'none';
+});
+document.getElementById('add-video-track').addEventListener('click', () => { addTrack('video'); trackMenu.style.display = 'none'; });
+document.getElementById('add-audio-track').addEventListener('click', () => { addTrack('audio'); trackMenu.style.display = 'none'; });
+document.addEventListener('click', () => { trackMenu.style.display = 'none'; });
 document.getElementById('btn-undo').addEventListener('click', undo);
 
 // Export
