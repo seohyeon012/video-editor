@@ -273,6 +273,7 @@ input[type="range"]{accent-color:var(--accent);cursor:pointer}
       <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="1" title="볼륨">
       <span id="total-dur">/ 00:00:00</span>
       <div class="spacer"></div>
+      <button id="btn-fullscreen" title="전체화면 (F)">⛶</button>
       <select id="res-sel" title="해상도">
         <option value="1920,1080">1080p</option>
         <option value="1280,720">720p</option>
@@ -408,6 +409,7 @@ function makeClip(media, trackId, startTime) {
     startTime, duration: dur, trimStart: 0, trimEnd: dur,
     volume: 1,
     filters: { brightness: 0, contrast: 0, saturation: 0, blur: 0 },
+    transform: { x: 0.5, y: 0.5, scale: 1, rotation: 0 },
     transition: null,
   };
 }
@@ -497,17 +499,28 @@ function drawMediaClip(clip, media, time, w, h) {
   ctx.save();
   applyFilters(clip);
 
-  // transition fade-in
+  // transitions
   if (clip.transition) {
-    const rel = time - clip.startTime;
-    if (rel < clip.transition.duration)
-      ctx.globalAlpha = rel / clip.transition.duration;
+    const rel    = time - clip.startTime;
+    const relEnd = clip.duration - rel;
+    const d      = clip.transition.duration;
+    const type   = clip.transition.type;
+    if ((type === 'fade-in'     || type === 'dissolve-in')  && rel    < d) ctx.globalAlpha = rel    / d;
+    if ((type === 'fade-out'    || type === 'dissolve-out') && relEnd < d) ctx.globalAlpha = Math.max(0, relEnd / d);
   }
 
   if (media.type === 'video' && media.videoEl?.readyState >= 2) {
     ctx.drawImage(media.videoEl, 0, 0, w, h);
   } else if (media.type === 'image' && media.imgEl) {
-    ctx.drawImage(media.imgEl, 0, 0, w, h);
+    const tr = clip.transform ?? { x: 0.5, y: 0.5, scale: 1, rotation: 0 };
+    const iw = media.imgEl.naturalWidth  || w;
+    const ih = media.imgEl.naturalHeight || h;
+    // fit-to-canvas base scale
+    const baseScale = Math.min(w / iw, h / ih);
+    const s = baseScale * tr.scale;
+    ctx.translate(tr.x * w, tr.y * h);
+    ctx.rotate((tr.rotation ?? 0) * Math.PI / 180);
+    ctx.drawImage(media.imgEl, -iw * s / 2, -ih * s / 2, iw * s, ih * s);
   }
   ctx.restore();
 }
@@ -581,6 +594,10 @@ function syncVideoEls(playing) {
         v.play().catch(() => {});
       } else {
         v.pause();
+        if (active) {
+          const srcT = (S.currentTime - c.startTime) + c.trimStart;
+          if (Math.abs(v.currentTime - srcT) > 0.05) v.currentTime = srcT;
+        }
       }
     }
   }
@@ -719,7 +736,21 @@ function renderMediaItem(item) {
   badge.className = `mbadge ${item.type}`;
   badge.textContent = { video: 'VID', audio: 'AUD', image: 'IMG' }[item.type];
 
-  el.append(thumb, info, badge);
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '×'; delBtn.title = '미디어 삭제';
+  delBtn.style.cssText = 'padding:2px 5px;font-size:13px;color:var(--text3);border:none;background:none;flex-shrink:0;opacity:0;transition:opacity .15s';
+  delBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    S.mediaFiles = S.mediaFiles.filter(m => m.id !== item.id);
+    // 타임라인에서도 해당 미디어 클립 제거
+    for (const t of S.tracks) t.clips = t.clips.filter(c => c.mediaId !== item.id);
+    recalcDuration(); renderTimeline(); renderFrame(S.currentTime);
+    el.remove();
+  });
+
+  el.append(thumb, info, badge, delBtn);
+  el.addEventListener('mouseenter', () => delBtn.style.opacity = '1');
+  el.addEventListener('mouseleave', () => delBtn.style.opacity = '0');
 
   el.addEventListener('dragstart', e => {
     e.dataTransfer.setData('mediaId', item.id);
@@ -815,7 +846,15 @@ function renderHeaders() {
       track.muted = !track.muted; muteBtn.classList.toggle('muted', track.muted);
       renderFrame(S.currentTime);
     });
-    div.append(nameEl, muteBtn); headers.appendChild(div);
+    const delBtn = document.createElement('button');
+    delBtn.className = 'track-mute'; delBtn.title = '트랙 삭제'; delBtn.textContent = '×';
+    delBtn.style.color = 'var(--danger)';
+    delBtn.addEventListener('click', () => {
+      if (!confirm(`"${track.label}" 트랙을 삭제할까요?`)) return;
+      S.tracks = S.tracks.filter(t => t.id !== track.id);
+      recalcDuration(); renderTimeline(); renderFrame(S.currentTime);
+    });
+    div.append(nameEl, muteBtn, delBtn); headers.appendChild(div);
   }
 }
 
@@ -1043,16 +1082,6 @@ function duplicateClip(clip, track) {
   recalcDuration(); renderTimeline();
 }
 
-function promptTransition(clip) {
-  const type = prompt('트랜지션 (fade / dissolve / none):', clip.transition?.type ?? 'fade');
-  if (!type || type === 'none') { clip.transition = null; }
-  else {
-    const dur = parseFloat(prompt('길이(초):', '0.5') || '0.5');
-    clip.transition = { type, duration: isNaN(dur) ? 0.5 : dur };
-  }
-  renderTimeline(); renderFrame(S.currentTime);
-}
-
 function addTextClip() {
   let tt = S.tracks.find(t => t.type === 'text');
   if (!tt) { tt = { id: uid(), type: 'text', label: 'Text', muted: false, clips: [] }; S.tracks.push(tt); }
@@ -1093,8 +1122,17 @@ function renderClipIns(clip) {
     iSlider('채도', clip.filters.saturation, -100, 100, 1, v => { clip.filters.saturation = v; ac(); });
     iSlider('블러', clip.filters.blur,        0,    20, 0.5, v => { clip.filters.blur     = v; ac(); });
   }
+  // 이미지 변형
+  if (clip.type === 'image') {
+    if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1, rotation: 0 };
+    iSec('변형');
+    iSlider('X 위치', clip.transform.x, 0, 1, 0.01, v => { clip.transform.x = v; ac(); });
+    iSlider('Y 위치', clip.transform.y, 0, 1, 0.01, v => { clip.transform.y = v; ac(); });
+    iSlider('크기',   clip.transform.scale, 0.1, 5, 0.01, v => { clip.transform.scale = v; ac(); });
+    iSlider('회전',   clip.transform.rotation, -180, 180, 1, v => { clip.transform.rotation = v; ac(); });
+  }
   iSec('트랜지션');
-  iRow('유형', iSelect(['없음','fade','dissolve'], clip.transition?.type ?? '없음', v => {
+  iRow('유형', iSelect(['없음','fade-in','fade-out','dissolve-in','dissolve-out'], clip.transition?.type ?? '없음', v => {
     clip.transition = v === '없음' ? null : { type: v, duration: clip.transition?.duration ?? 0.5 };
     showInspector(clip); ac();
   }));
@@ -1340,14 +1378,48 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Escape') { selectClip(null); document.getElementById('modal-overlay').classList.add('hidden'); }
 });
 
-// Auto-scroll playhead into view
-setInterval(() => {
-  if (!S.isPlaying) return;
-  const ph = S.currentTime * S.scale;
-  const sw = scrollWrap;
-  if (ph < sw.scrollLeft + 20 || ph > sw.scrollLeft + sw.clientWidth - 40)
-    sw.scrollLeft = Math.max(0, ph - sw.clientWidth / 3);
-}, 200);
+// 플레이헤드 드래그
+(function() {
+  const ph = document.getElementById('playhead');
+  ph.style.pointerEvents = 'all';
+  ph.style.cursor = 'ew-resize';
+  ph.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    const x0 = e.clientX, t0 = S.currentTime;
+    function mv(e2) { seekTo(t0 + (e2.clientX - x0) / S.scale); }
+    function up() { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); }
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+  });
+})();
+
+// 전체화면
+document.getElementById('btn-fullscreen').addEventListener('click', () => {
+  const wrap = document.getElementById('preview-wrap');
+  if (document.fullscreenElement) document.exitFullscreen();
+  else wrap.requestFullscreen().catch(() => {});
+});
+document.addEventListener('fullscreenchange', () => {
+  const btn = document.getElementById('btn-fullscreen');
+  btn.textContent = document.fullscreenElement ? '✕' : '⛶';
+  fitCanvas();
+});
+document.addEventListener('keydown', e => {
+  if (e.code === 'KeyF' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+    document.getElementById('btn-fullscreen').click();
+  }
+});
+
+// 트랜지션 prompt 업데이트
+function promptTransition(clip) {
+  const type = prompt('트랜지션 (fade-in / fade-out / dissolve-in / dissolve-out / none):', clip.transition?.type ?? 'fade-in');
+  if (!type || type === 'none') { clip.transition = null; }
+  else {
+    const dur = parseFloat(prompt('길이(초):', '0.5') || '0.5');
+    clip.transition = { type, duration: isNaN(dur) ? 0.5 : dur };
+  }
+  renderTimeline(); renderFrame(S.currentTime);
+}
 
 console.log('%cVideoEdit ready', 'color:#a29bfe;font-weight:700;font-size:14px');
 </script>
