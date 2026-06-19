@@ -1100,13 +1100,30 @@ function splitClip(clip, track, t) {
 
 function detachAudio(clip, track) {
   const media = getMedia(clip.mediaId);
-  if (!media?.audioBuffer) { alert('오디오를 추출할 수 없습니다.'); return; }
+  if (!media || media.type !== 'video') { alert('비디오 클립에서만 오디오를 분리할 수 있습니다.'); return; }
   pushUndo();
+
+  // 같은 URL로 오디오 전용 미디어 엔트리 생성 (별도 video 엘리먼트 사용)
+  const audioVel = document.createElement('video');
+  audioVel.src = media.url; audioVel.preload = 'auto'; audioVel.playsInline = true;
+  const audioMedia = {
+    id: uid(), name: media.name + ' (오디오)', type: 'audio',
+    file: media.file, url: media.url, duration: media.duration,
+    w: 0, h: 0, imgEl: null, audioBuffer: null, videoEl: audioVel,
+  };
+  S.mediaFiles.push(audioMedia);
+
+  // 오디오 트랙 찾기 or 생성
   let at = S.tracks.find(t => t.type === 'audio');
   if (!at) { at = { id: uid(), type: 'audio', label: nextTrackLabel(), muted: false, clips: [] }; S.tracks.push(at); }
-  at.clips.push({ ...clip, id: uid(), type: 'audio', trackId: at.id });
+
+  // 오디오 클립 추가 (별도 mediaId 사용)
+  at.clips.push({ ...clip, id: uid(), type: 'audio', mediaId: audioMedia.id, trackId: at.id, volume: 1 });
+
+  // 원본 비디오 클립 음소거
   clip.volume = 0;
-  renderTimeline();
+
+  recalcDuration(); renderTimeline(); renderFrame(S.currentTime);
 }
 
 function duplicateClip(clip, track) {
