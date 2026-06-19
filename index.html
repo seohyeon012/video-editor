@@ -829,14 +829,18 @@ function renderRuler() {
   rulerEl.width = W; rulerEl.height = H;
   rulerEl.style.width = W + 'px';
   const rc = rulerEl.getContext('2d');
-  rc.fillStyle = '#1e1e28'; rc.fillRect(0, 0, W, H);
+  const style = getComputedStyle(document.documentElement);
+  const cBg   = style.getPropertyValue('--bg2').trim() || '#1e1e28';
+  const cTick  = style.getPropertyValue('--border').trim() || '#444466';
+  const cText  = style.getPropertyValue('--text2').trim() || '#8888aa';
+  rc.fillStyle = cBg; rc.fillRect(0, 0, W, H);
 
   const step = niceStep(70 / S.scale);
   rc.font = '10px Segoe UI, sans-serif'; rc.textBaseline = 'middle';
   for (let t = 0; t <= S.duration + step * 2; t += step) {
     const x = Math.round(t * S.scale);
-    rc.fillStyle = '#444466'; rc.fillRect(x, H * 0.55, 1, H * 0.45);
-    rc.fillStyle = '#8888aa'; rc.fillText(fmtRuler(t), x + 3, H * 0.35);
+    rc.fillStyle = cTick; rc.fillRect(x, H * 0.55, 1, H * 0.45);
+    rc.fillStyle = cText; rc.fillText(fmtRuler(t), x + 3, H * 0.35);
   }
 }
 
