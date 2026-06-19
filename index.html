@@ -954,17 +954,60 @@ function buildWaveform(clip, buf) {
   return c;
 }
 
+// ── 겹침 방지: 해당 트랙에서 가장 가까운 빈 자리 반환 ──────────
+function findFreePos(track, clip, desired) {
+  const others = track.clips.filter(c => c.id !== clip.id)
+    .sort((a, b) => a.startTime - b.startTime);
+  let start = Math.max(0, desired);
+  for (const o of others) {
+    if (start < o.startTime + o.duration && start + clip.duration > o.startTime) {
+      const snapRight = o.startTime + o.duration;
+      const snapLeft  = Math.max(0, o.startTime - clip.duration);
+      start = (desired >= o.startTime) ? snapRight : snapLeft;
+    }
+  }
+  return start;
+}
+
+// ── 마우스 좌표로 어느 트랙 행인지 반환 ──────────────────────────
+function getTrackAtY(clientY) {
+  for (const row of document.querySelectorAll('.track-row')) {
+    const r = row.getBoundingClientRect();
+    if (clientY >= r.top && clientY <= r.bottom)
+      return S.tracks.find(t => t.id === row.dataset.tid) ?? null;
+  }
+  return null;
+}
+
 // ── Clip drag-to-move ──────────────────────────────────────────
 function onClipDrag(e, clip, track, el) {
   if (e.target.classList.contains('ch')) return;
   e.preventDefault(); e.stopPropagation();
   selectClip(clip.id);
   const x0 = e.clientX, s0 = clip.startTime;
+  let curTrack = track;
+
   function mv(e2) {
-    clip.startTime = Math.max(0, s0 + (e2.clientX - x0) / S.scale);
-    el.style.left = clip.startTime * S.scale + 'px';
+    const rawStart = Math.max(0, s0 + (e2.clientX - x0) / S.scale);
+
+    // 상하 이동 → 트랙 전환
+    const hovered = getTrackAtY(e2.clientY);
+    if (hovered && hovered !== curTrack) {
+      curTrack.clips = curTrack.clips.filter(c => c.id !== clip.id);
+      clip.trackId = hovered.id;
+      hovered.clips.push(clip);
+      curTrack = hovered;
+      renderTracks();
+    }
+
+    // 겹침 방지 위치 계산
+    clip.startTime = findFreePos(curTrack, clip, rawStart);
+    const live = document.querySelector(`[data-cid="${clip.id}"]`);
+    if (live) live.style.left = clip.startTime * S.scale + 'px';
+
     recalcDuration(); updatePlayhead(); updateTotalDur();
   }
+
   function up() {
     window.removeEventListener('mousemove', mv);
     window.removeEventListener('mouseup', up);
@@ -1011,6 +1054,7 @@ function onDrop(e, track, row) {
   const startTime = Math.max(0, (e.clientX - rect.left + scrollWrap.scrollLeft) / S.scale);
   pushUndo();
   const clip = makeClip(media, track.id, startTime);
+  clip.startTime = findFreePos(track, clip, startTime);
   track.clips.push(clip);
   recalcDuration(); renderTimeline(); selectClip(clip.id); renderFrame(S.currentTime);
 }
@@ -1098,12 +1142,12 @@ function splitClip(clip, track, t) {
   recalcDuration(); renderTimeline();
 }
 
-function detachAudio(clip, track) {
+function detachAudio(clip, srcTrack) {
   const media = getMedia(clip.mediaId);
   if (!media || media.type !== 'video') { alert('비디오 클립에서만 오디오를 분리할 수 있습니다.'); return; }
   pushUndo();
 
-  // 같은 URL로 오디오 전용 미디어 엔트리 생성 (별도 video 엘리먼트 사용)
+  // 오디오 전용 별도 video 엘리먼트 생성
   const audioVel = document.createElement('video');
   audioVel.src = media.url; audioVel.preload = 'auto'; audioVel.playsInline = true;
   const audioMedia = {
@@ -1113,14 +1157,17 @@ function detachAudio(clip, track) {
   };
   S.mediaFiles.push(audioMedia);
 
-  // 오디오 트랙 찾기 or 생성
-  let at = S.tracks.find(t => t.type === 'audio');
-  if (!at) { at = { id: uid(), type: 'audio', label: nextTrackLabel(), muted: false, clips: [] }; S.tracks.push(at); }
+  // 소스 트랙 바로 아래에 오디오 트랙 삽입 (없으면)
+  const srcIdx = S.tracks.indexOf(srcTrack);
+  let at = (srcIdx + 1 < S.tracks.length && S.tracks[srcIdx + 1].type === 'audio')
+    ? S.tracks[srcIdx + 1]
+    : null;
+  if (!at) {
+    at = { id: uid(), type: 'audio', label: nextTrackLabel(), muted: false, clips: [] };
+    S.tracks.splice(srcIdx + 1, 0, at);
+  }
 
-  // 오디오 클립 추가 (별도 mediaId 사용)
   at.clips.push({ ...clip, id: uid(), type: 'audio', mediaId: audioMedia.id, trackId: at.id, volume: 1 });
-
-  // 원본 비디오 클립 음소거
   clip.volume = 0;
 
   recalcDuration(); renderTimeline(); renderFrame(S.currentTime);
@@ -1134,7 +1181,10 @@ function duplicateClip(clip, track) {
 
 function addTextClip() {
   let tt = S.tracks.find(t => t.type === 'text');
-  if (!tt) { tt = { id: uid(), type: 'text', label: nextTrackLabel(), muted: false, clips: [] }; S.tracks.push(tt); }
+  if (!tt) {
+    tt = { id: uid(), type: 'text', label: nextTrackLabel(), muted: false, clips: [] };
+    S.tracks.push(tt); // 텍스트 트랙은 항상 맨 아래
+  }
   pushUndo();
   const clip = makeTextClip(tt.id, S.currentTime);
   tt.clips.push(clip); recalcDuration(); renderTimeline(); selectClip(clip.id);
