@@ -812,20 +812,23 @@ const scrollWrap = document.getElementById('timeline-scroll-wrap');
 const tracksArea = document.getElementById('tracks-area');
 const headers    = document.getElementById('track-headers');
 
+function timelineWidth() {
+  return Math.max(S.duration * S.scale + 6000, scrollWrap.clientWidth);
+}
+
 function renderTimeline() {
   renderRuler();
   renderHeaders();
   renderTracks();
   updatePlayhead();
   updateTotalDur();
-  const minW = Math.max(S.duration * S.scale + 3000, scrollWrap.clientWidth);
-  tracksArea.style.width = minW + 'px';
+  tracksArea.style.width = timelineWidth() + 'px';
 }
 
 // ── Ruler ──────────────────────────────────────────────────────
 function renderRuler() {
   const rulerEl = document.getElementById('time-ruler');
-  const W = Math.max(S.duration * S.scale + 3000, scrollWrap.clientWidth);
+  const W = timelineWidth();
   const H = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ruler-h')) || 24;
   rulerEl.width = W; rulerEl.height = H;
   rulerEl.style.width = W + 'px';
@@ -1021,7 +1024,15 @@ function onClipDrag(e, clip, track, el) {
     const live = document.querySelector(`[data-cid="${clip.id}"]`);
     if (live) live.style.left = clip.startTime * S.scale + 'px';
 
-    recalcDuration(); updatePlayhead(); updateTotalDur();
+    recalcDuration();
+    // 드래그 중 타임라인 자동 확장
+    const needed = clip.startTime * S.scale + clip.duration * S.scale + 6000;
+    if (needed > parseInt(tracksArea.style.width)) {
+      const w = needed + 'px';
+      tracksArea.style.width = w;
+      document.getElementById('time-ruler').style.width = w;
+    }
+    updatePlayhead(); updateTotalDur();
   }
 
   function up() {
