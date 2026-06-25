@@ -12,7 +12,7 @@
   --text:#e4e4f0;--text2:#8888aa;--text3:#555568;
   --danger:#e05a5a;--success:#4caf82;
   --clip-video:#5b6ef5;--clip-audio:#3bbf7e;--clip-text:#b06ef5;--clip-image:#f5a23b;
-  --header-h:44px;--library-w:220px;--inspector-w:260px;
+  --header-h:44px;--library-w:220px;--inspector-w:300px;
   --timeline-h:260px;--toolbar-h:36px;--ruler-h:24px;--track-h:44px;
 }
 :root.light{
@@ -304,7 +304,7 @@ input[type="range"]{accent-color:var(--accent);cursor:pointer}
     <button id="btn-split" title="S">✂ 분할</button>
     <button id="btn-del-clip" title="Del">🗑 삭제</button>
     <div class="sep"></div>
-    <label>줌 <input type="range" id="tl-zoom" min="20" max="500" value="100"></label>
+    <label>줌 <input type="range" id="tl-zoom" min="5" max="500" value="60"></label>
     <div class="sep"></div>
     <button id="btn-add-text">T 자막</button>
     <div style="position:relative;display:inline-block">
@@ -383,7 +383,7 @@ const S = {
   duration: 0,
   isPlaying: false,
   masterVolume: 1,
-  scale: 100,          // px/sec
+  scale: 60,          // px/sec
   tracks: [],
   mediaFiles: [],
   selectedClipId: null,
@@ -817,14 +817,14 @@ function renderTimeline() {
   renderTracks();
   updatePlayhead();
   updateTotalDur();
-  const minW = Math.max(S.duration * S.scale + 400, scrollWrap.clientWidth);
+  const minW = Math.max(S.duration * S.scale + 3000, scrollWrap.clientWidth);
   tracksArea.style.width = minW + 'px';
 }
 
 // ── Ruler ──────────────────────────────────────────────────────
 function renderRuler() {
   const rulerEl = document.getElementById('time-ruler');
-  const W = Math.max(S.duration * S.scale + 400, scrollWrap.clientWidth);
+  const W = Math.max(S.duration * S.scale + 3000, scrollWrap.clientWidth);
   const H = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ruler-h')) || 24;
   rulerEl.width = W; rulerEl.height = H;
   rulerEl.style.width = W + 'px';
