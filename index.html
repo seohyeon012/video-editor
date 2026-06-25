@@ -642,7 +642,8 @@ function togglePlay() { S.isPlaying ? pause() : play(); }
 function rafLoop(ts) {
   if (lastTs !== null) {
     S.currentTime += (ts - lastTs) / 1000;
-    if (S.currentTime >= S.duration) {
+    // 클립이 있을 때만 끝에서 정지, 없으면 검은 화면 계속 재생
+    if (S.duration > 1 && S.currentTime >= S.duration) {
       S.currentTime = 0; pause(); updateTimecode(); return;
     }
   }
@@ -654,7 +655,7 @@ function rafLoop(ts) {
 
 function seekTo(t) {
   const was = S.isPlaying; if (was) pause();
-  S.currentTime = Math.max(0, Math.min(S.duration || 0, t));
+  S.currentTime = Math.max(0, S.duration > 1 ? Math.min(S.duration, t) : t);
   syncVideoEls(false);
   renderFrame(S.currentTime);
   updateTimecode(); updatePlayhead();
@@ -835,22 +836,27 @@ function renderRuler() {
   const cText  = style.getPropertyValue('--text2').trim() || '#8888aa';
   rc.fillStyle = cBg; rc.fillRect(0, 0, W, H);
 
-  const step = niceStep(70 / S.scale);
+  const step = niceStep(S.scale);
   rc.font = '10px Segoe UI, sans-serif'; rc.textBaseline = 'middle';
-  for (let t = 0; t <= S.duration + step * 2; t += step) {
+  const totalSecs = Math.max(S.duration, W / S.scale);
+  for (let t = 0; t <= totalSecs + step; t += step) {
     const x = Math.round(t * S.scale);
     rc.fillStyle = cTick; rc.fillRect(x, H * 0.55, 1, H * 0.45);
     rc.fillStyle = cText; rc.fillText(fmtRuler(t), x + 3, H * 0.35);
   }
 }
 
-function niceStep(minPx) {
-  return [0.25,0.5,1,2,5,10,30,60,120,300,600].find(s => s * S.scale >= minPx) ?? 600;
+function niceStep(scale) {
+  // 라벨 간격 최소 80px 확보
+  const minSecs = 80 / scale;
+  return [0.5,1,2,5,10,15,30,60,120,300,600,1800,3600].find(s => s >= minSecs) ?? 3600;
 }
 
 function fmtRuler(s) {
-  if (s < 60) return s.toFixed(s < 10 ? (s % 1 ? 2 : 0) : 0) + 's';
-  return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+  if (s === 0) return '0s';
+  if (s < 60) return s % 1 === 0 ? s + 's' : s.toFixed(1) + 's';
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return sec === 0 ? m + 'm' : `${m}:${String(sec).padStart(2,'0')}`;
 }
 
 // ── Headers ────────────────────────────────────────────────────
